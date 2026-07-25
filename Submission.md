@@ -27,6 +27,16 @@ Stage 4 deliberately searches for the lead's own company name, not just the expl
 
 Every fact in Stage 2's output is traced to a live fetch (SEC EDGAR full-text search, Google News RSS, flytbase.com's own case-study pages — all free and keyless, deliberately, so research quality never depends on paid tool access). Anything not found at run time is explicitly marked `UNVERIFIED AT RUN TIME` rather than filled with a plausible-sounding guess. Stage 7's simulation refuses to render at all if there's no real case study to ground it in.
 
+## Path to production (what's simulated here vs. what a real deployment needs)
+
+This runs today as a page you paste a lead into and load. A real BDR wouldn't use it that way — here's the honest gap between this build and production, and what's already designed to close it:
+
+- **Trigger**: a real webhook from flytbase.com/contact firing this pipeline automatically, instead of a manual paste into the try-a-different-lead form.
+- **Send**: Stage 3's drafted emails go out through a real send API (Gmail/Outlook API) instead of just being displayed on the page.
+- **Track**: the app already includes a small working proof-of-concept of this — `/client-preview` records each open in-memory and the main page shows a live "opened Nx, last at HH:MM" pill next to the email's CTA link. It's intentionally minimal (single-process, resets on restart, no persistence) rather than a fabricated dashboard of fake numbers. A real deployment would swap this for standard link/open tracking on a real send.
+- **Follow-up**: Stage 3's progression logic already anticipates this — email 2 is explicitly written to fire "only if no reply," email 3 "only if still no reply." A scheduler checking the same open/reply signal the tracking POC demonstrates would trigger those automatically, so the follow-up logic doesn't need to be rebuilt, just connected to a real signal.
+- **Where this would live**: most naturally as a browser extension/CRM plugin a BDR opens against an inbound thread, rather than a standalone page — the pipeline and its output are already structured as reusable, typed functions (see `orchestrator.py`), so wrapping them behind a different front end doesn't require touching the logic itself.
+
 ## Known limitations (candor over polish)
 
 - flytbase.com's per-case-study numeric result badges (e.g. "Reduced Travel Time") are client-side rendered and not reliably extractable via a static fetch — the system does not claim a specific percentage it cannot verify from source.

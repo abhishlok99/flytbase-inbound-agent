@@ -39,6 +39,37 @@ app = FastAPI(title="FlytBase Inbound BDR Agent")
 with open("input/lead_email.json") as f:
     DEFAULT_LEAD_EMAIL = json.load(f)
 
+# -- lightweight, in-memory engagement-tracking proof-of-concept.
+# NOT a production analytics system: single-process, resets on restart,
+# no persistence. It exists to demonstrate the concept live -- Stage 3's
+# email links to /client-preview, and this shows whether/when that link
+# has actually been opened. A real deployment would swap this for
+# standard link/open tracking + a scheduler that checks this signal
+# against Stage 3's own progression logic (email 2 only fires "if no
+# reply") to send the next email automatically -- see Submission.md's
+# "Path to production" section for the full picture of what's simulated
+# here vs. what real infrastructure this would need.
+_TRACKING = {"opens": []}
+
+
+def _record_open(company: str) -> None:
+    from datetime import datetime, timezone
+    _TRACKING["opens"].append({"company": company, "at": datetime.now(timezone.utc).strftime("%H:%M:%S UTC")})
+
+
+def _tracking_summary(company: str) -> dict:
+    opens = [o for o in _TRACKING["opens"] if o["company"] == company]
+    return {"count": len(opens), "last_at": opens[-1]["at"] if opens else None}
+
+
+def _tracking_pill_html(company: str) -> str:
+    t = _tracking_summary(company)
+    if t["count"] > 0:
+        return (f"<div class='track-pill'>&#128065; Opened {t['count']}&times; this session &mdash; "
+                f"last at {t['last_at']} <span class='track-tag'>live tracking POC</span></div>")
+    return ("<div class='track-pill track-pill-empty'>&#128065; Not opened yet "
+            "<span class='track-tag'>live tracking POC</span></div>")
+
 
 STYLE = """
 <style>
@@ -121,6 +152,13 @@ STYLE = """
     color:#141310; background:var(--amber); padding:.4rem .8rem; border-radius:5px; text-decoration:none; font-weight:700;
   }
   .cta-link:hover{background:#e9c873}
+  .track-pill{
+    display:inline-flex; align-items:center; gap:.4rem; margin-top:.6rem; margin-left:.6rem;
+    font-family:'JetBrains Mono'; font-size:.72rem; color:#9a9483; background:#161512;
+    border:1px solid #2a2822; border-radius:999px; padding:.3rem .7rem;
+  }
+  .track-pill:not(.track-pill-empty){color:#c9e4a8; border-color:#3d5a3a}
+  .track-tag{color:#6b6350; font-size:.62rem; text-transform:uppercase; letter-spacing:.04em}
   .rail{
     display:flex; gap:.4rem; flex-wrap:wrap; margin:0 0 2.2rem; position:sticky; top:64px; z-index:10;
     background:linear-gradient(to bottom, rgba(12,12,11,1) 70%, transparent); padding:.6rem 0 1rem;
@@ -223,6 +261,7 @@ def render_html(result: dict) -> str:
         f"<div class='email'><b>Email {e['step']} &mdash; {esc(e['subject'])}</b><pre>{esc(e['body'])}</pre>"
         f"<small>Goal: {esc(e['goal_of_this_email'])}</small>"
         + (f"<a class='cta-link' href='/client-preview' target='_blank'>&#8599; View interactive walkthrough (what Rodrigo would see)</a>"
+           + _tracking_pill_html(lead.get("company", ""))
            if e.get("client_preview_link") else "")
         + "</div>"
         for e in resp.get("sequence", [])
@@ -488,7 +527,7 @@ def render_client_page(result: dict) -> str:
   <div class="csection">
     <h2>03 &middot; Suggested next step</h2>
     <div class="ccard"><p>{esc(h.get('suggested_next_step',''))}</p></div>
-    <p class="honesty-note">This page is a prototype of what a personalized follow-up asset could look like &mdash; generated from this run's real data, not a template with your name pasted in.</p>
+    <p class="honesty-note">Every section above is generated live from this exact lead's real data &mdash; nothing here is a template with a name pasted in. In production this page would be sent as the actual follow-up link and its opens/clicks tracked the same way any sales-engagement tool does.</p>
   </div>
 
   <div class="cfooter">flytbase &mdash; prepared automatically from your inbound message, {esc(lead.get('subject',''))}</div>
@@ -535,6 +574,7 @@ def client_preview(from_name: str = "", from_email: str = "", title: str = "", c
     whatever lead is currently loaded (including a pasted override)."""
     email, _ = _resolve_email(dict(from_name=from_name, from_email=from_email, title=title,
                                      company=company, country=country, subject=subject, body=body))
+    _record_open(email.get("company", ""))
     result = run_pipeline(email)
     return render_client_page(result)
 
