@@ -30,8 +30,9 @@ def _template_email(step: int, email: dict, qualification: dict, research: dict)
             f"is already on the calendar for Q3, I'd love to understand two things before then -- "
             f"{unknowns[0].split(':')[0] if unknowns else 'your evaluation criteria'} and "
             f"who else on the technical or procurement side should be in the loop.\n\n"
-            f"Would a 20-minute call this week work to walk through how this has played out at "
-            f"comparable 24/7 sites?"
+            f"I also put together a short interactive walkthrough of what this could look like across "
+            f"your 3 Atacama sites (linked below) -- would a 20-minute call this week work to go through "
+            f"it and how this has played out at comparable 24/7 sites?"
         )
         goal = "Discover Economic Buyer + Decision Criteria; convert warm referral into a scheduled call before Q3."
     elif step == 2:
@@ -53,7 +54,7 @@ def _template_email(step: int, email: dict, qualification: dict, research: dict)
         )
         goal = "Low-pressure breakup/re-queue email; keeps the door open on their stated timeline instead of pushing."
 
-    return {"step": step, "subject": subject, "body": body, "goal_of_this_email": goal}
+    return {"step": step, "subject": subject, "body": body, "goal_of_this_email": goal, "client_preview_link": step == 1}
 
 
 def generate_sequence(email: dict, qualification: dict, research: dict) -> dict:

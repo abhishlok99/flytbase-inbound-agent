@@ -16,6 +16,8 @@ company already has a case study under a different site name.
 """
 import re
 
+import geo
+
 
 def _extract_search_terms(email: dict) -> dict:
     body = email.get("body", "")
@@ -80,9 +82,13 @@ def match_case_studies(email: dict, case_studies: list[dict], top_n: int = 3) ->
     scored.sort(key=lambda x: x["match_score"], reverse=True)
     top = scored[:top_n]
 
+    already_surfaced = {m["url"] for m in top}
+    nearby = geo.nearby_deployments(case_studies, email.get("country", ""), exclude_urls=already_surfaced)
+
     return {
         "search_terms_used": terms,
         "all_scored_matches": scored,
         "top_matches": top,
         "primary_recommendation": top[0] if top else None,
+        "nearby_deployments": nearby,
     }
