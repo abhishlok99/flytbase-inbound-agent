@@ -29,14 +29,17 @@ def fetch_case_studies() -> list[dict]:
         text = " ".join(a.get_text(" ", strip=True).split())
         if text and href:
             studies.append({"title": text, "url": href if href.startswith("http") else f"https://flytbase.com{href}"})
-    # de-dupe by url
-    seen = set()
-    deduped = []
+    # de-dupe by url -- prefer whichever occurrence has the more descriptive
+    # title. The same case study can appear in multiple placements on the
+    # page (e.g. a nav quick-link that only wraps "Read the case study" in
+    # the anchor, vs. the main grid card that merges the full headline into
+    # the anchor text) -- keep the longer, more informative one.
+    best: dict[str, dict] = {}
     for s in studies:
-        if s["url"] not in seen:
-            seen.add(s["url"])
-            deduped.append(s)
-    return deduped
+        existing = best.get(s["url"])
+        if existing is None or len(s["title"]) > len(existing["title"]):
+            best[s["url"]] = s
+    return list(best.values())
 
 
 def fetch_partners(region: str | None = None) -> list[dict]:
