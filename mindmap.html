@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Thought Process — FlytBase Inbound BDR Agent</title>
+<style>
+  :root { --ink:#1a1a1a; --line:#2b2b2b; --bg:#faf9f6; --card:#fff; --accent:#166534; --warn:#92400e; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); margin:0; padding:2rem 1.5rem 4rem; }
+  h1 { font-size:1.5rem; margin-bottom:.2rem; }
+  .sub { color:#555; max-width:70ch; margin-bottom:2rem; }
+  .flow { display:flex; flex-wrap:wrap; gap:1rem; align-items:stretch; }
+  .stage { background:var(--card); border:2px solid var(--line); border-radius:10px; padding:1rem; width:230px; position:relative; }
+  .stage .num { position:absolute; top:-14px; left:12px; background:var(--line); color:#fff; font-size:.75rem; padding:.15rem .5rem; border-radius:999px; }
+  .stage h3 { margin:.4rem 0 .4rem; font-size:1rem; }
+  .stage p { font-size:.82rem; color:#333; margin:.3rem 0; }
+  .stage .tools { font-size:.72rem; color:#666; margin-top:.5rem; }
+  .arrow { align-self:center; font-size:1.6rem; color:#888; }
+  .row-label { font-weight:600; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; color:#666; margin:2rem 0 .5rem; }
+  .fetch { background:#eef2ff; border:2px dashed #6366f1; }
+  .decision { background:#fff7ed; border:2px solid var(--warn); }
+  .decision .num { background:var(--warn); }
+  .bonus { background:#f0fdf4; border:2px solid var(--accent); }
+  .bonus .num { background:var(--accent); }
+  .legend { display:flex; gap:1.5rem; margin-top:2.5rem; font-size:.8rem; flex-wrap:wrap; }
+  .legend span { display:inline-flex; align-items:center; gap:.4rem; }
+  .swatch { width:14px; height:14px; border-radius:3px; display:inline-block; }
+  .footer-note { max-width:70ch; margin-top:2.5rem; font-size:.85rem; color:#444; background:#fff; border:1px solid #eee; border-radius:8px; padding:1rem; }
+  code { background:#f1f1f1; padding:.1rem .3rem; border-radius:4px; font-size:.85em; }
+</style>
+</head>
+<body>
+  <h1>Thought Process — Inbound BDR Agent Pipeline</h1>
+  <p class="sub">How the problem was broken down: delegated across 7 scoped, independently-callable stages (6 required by the brief + 1 bonus), not one prompt doing everything. Solid boxes are pure logic (deterministic, always inspectable). Dashed boxes are live network fetches. Orange is a real branch/decision point — what the system does when data is missing or ambiguous, not just the happy path.</p>
+
+  <div class="row-label">Input</div>
+  <div class="flow">
+    <div class="stage"><div class="num">IN</div><h3>Raw inbound email</h3><p>The fixed brief input — name, title, company, subject, body. Only input to the whole system.</p></div>
+    <div class="arrow">→</div>
+    <div class="stage"><div class="num">1</div><h3>Qualification</h3><p>Extracts known/unknown MEDDPICC fields from the raw text via keyword/pattern signals — zero hard-coded facts about SQM.</p><p class="tools">stages/stage1_qualification.py</p></div>
+  </div>
+
+  <div class="row-label">Parallel live research (fan-out)</div>
+  <div class="flow">
+    <div class="stage fetch"><div class="num">F1</div><h3>flytbase.com crawler</h3><p>Pulls every current case study title/URL — no knowledge of "SQM" or "Anglo American" baked in.</p><p class="tools">fetchers/flytbase_site.py</p></div>
+    <div class="stage fetch"><div class="num">F2</div><h3>SEC EDGAR</h3><p>Free, keyless full-text search for public filings on the lead's company.</p><p class="tools">fetchers/edgar.py</p></div>
+    <div class="stage fetch"><div class="num">F3</div><h3>Google News RSS</h3><p>Free, keyless recent-news search.</p><p class="tools">fetchers/news.py</p></div>
+  </div>
+
+  <div class="row-label">Matching &amp; decision point</div>
+  <div class="flow">
+    <div class="stage"><div class="num">4</div><h3>Case Study Matching</h3><p>Scores <i>every</i> fetched case study against terms derived from the email — company name AND any referenced company, not just the one named in the email.</p><p class="tools">stages/stage4_case_study.py</p></div>
+    <div class="arrow">→</div>
+    <div class="stage decision"><div class="num">?</div><h3>Existing-account check</h3><p>If the top match is the lead's <b>own</b> company (not just the referral), this is flagged as a likely expansion signal, not a cold lead — changes Stage 2 positioning and Stage 5's partner logic downstream.</p></div>
+  </div>
+
+  <div class="row-label">Research synthesis &amp; drafting</div>
+  <div class="flow">
+    <div class="stage"><div class="num">2</div><h3>Deep Account Research</h3><p>Synthesizes F1–F3 + the Stage 4 signal. Anything not found is marked <code>UNVERIFIED</code>, never guessed.</p><p class="tools">stages/stage2_research.py</p></div>
+    <div class="arrow">→</div>
+    <div class="stage"><div class="num">3</div><h3>Response Generation</h3><p>3-email sequence assembled from Stage 1's gaps + Stage 2's findings. LLM-pluggable; falls back to structured template logic if no key is configured — never silently generic.</p><p class="tools">stages/stage3_response.py, llm_adapter.py</p></div>
+  </div>
+
+  <div class="row-label">Routing &amp; handoff</div>
+  <div class="flow">
+    <div class="stage decision"><div class="num">5</div><h3>Partner Identification</h3><p>If the matched case study is the lead's <i>own</i> existing site, prefer <b>that</b> site's real implementation partner (continuity) over a generic regional partner. Falls back to direct-AE if no partner signal exists at all — never invents one.</p><p class="tools">stages/stage5_partner.py</p></div>
+    <div class="arrow">→</div>
+    <div class="stage"><div class="num">6</div><h3>AE Handoff Summary</h3><p>Pure synthesis of Stages 1–5 — introduces zero new claims. This is the "would an AE know what to do next" test.</p><p class="tools">stages/stage6_handoff.py</p></div>
+    <div class="arrow">→</div>
+    <div class="stage bonus"><div class="num">7</div><h3>Impact Simulation (bonus)</h3><p>Projects onto the 3 new sites using <i>only</i> metrics FlytBase already measured at this same customer's other site — labeled a projection, not a promise, with the 24/7-vs-daytime scale gap called out explicitly.</p><p class="tools">stages/stage7_simulation.py</p></div>
+  </div>
+
+  <div class="legend">
+    <span><span class="swatch" style="background:#fff;border:2px solid #2b2b2b"></span> deterministic logic (always runs, fully inspectable)</span>
+    <span><span class="swatch" style="background:#eef2ff;border:2px solid #6366f1"></span> live network fetch (degrades gracefully, never fabricates on failure)</span>
+    <span><span class="swatch" style="background:#fff7ed;border:2px solid #92400e"></span> real decision/branch point</span>
+    <span><span class="swatch" style="background:#f0fdf4;border:2px solid #166534"></span> bonus stage, beyond the brief's 6</span>
+  </div>
+
+  <div class="footer-note">
+    <b>Why delegated, not one big prompt:</b> each stage takes typed input and returns typed output (see <code>orchestrator.py</code>), so any single stage can be tested, replaced, or audited without touching the others. The two decision points (existing-account check, partner continuity) are the parts of this system that couldn't be a static template — they only fire correctly because Stage 4 searches broadly instead of looking for one pre-known answer.
+  </div>
+</body>
+</html>
