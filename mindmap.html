@@ -2,36 +2,67 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thought Process — FlytBase Inbound BDR Agent</title>
 <style>
-  :root { --ink:#1a1a1a; --line:#2b2b2b; --bg:#faf9f6; --card:#fff; --accent:#166534; --warn:#92400e; }
+  :root{
+    --ink:#161512; --paper:#f4efe2; --paper-2:#efe8d6; --line:#161512;
+    --bg-0:#0c0c0b; --amber:#c99a3c; --amber-soft:#8a7a3f;
+    --green:#5f8a5b; --red:#b3543f; --muted:#9a9483;
+  }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); margin:0; padding:2rem 1.5rem 4rem; }
-  h1 { font-size:1.5rem; margin-bottom:.2rem; }
-  .sub { color:#555; max-width:70ch; margin-bottom:2rem; }
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:
+      radial-gradient(circle at 15% 0%, #1c1a16 0%, var(--bg-0) 45%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 42px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 1px, transparent 1px 42px);
+    color:#e9e4d6; font-family:-apple-system,"Segoe UI",Roboto,sans-serif; line-height:1.55;
+    padding:2rem 1.5rem 4rem;
+  }
+  .mono{font-family:ui-monospace,"JetBrains Mono",Consolas,monospace}
+  .eyebrow{font-family:ui-monospace,Consolas,monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-bottom:.6rem}
+  h1 { font-size:1.7rem; margin:.2rem 0 .6rem; color:#faf7ee; font-weight:700; letter-spacing:-.01em; }
+  .sub { color:#b9b39f; max-width:70ch; margin-bottom:2.2rem; }
   .flow { display:flex; flex-wrap:wrap; gap:1rem; align-items:stretch; }
-  .stage { background:var(--card); border:2px solid var(--line); border-radius:10px; padding:1rem; width:230px; position:relative; }
-  .stage .num { position:absolute; top:-14px; left:12px; background:var(--line); color:#fff; font-size:.75rem; padding:.15rem .5rem; border-radius:999px; }
-  .stage h3 { margin:.4rem 0 .4rem; font-size:1rem; }
-  .stage p { font-size:.82rem; color:#333; margin:.3rem 0; }
-  .stage .tools { font-size:.72rem; color:#666; margin-top:.5rem; }
-  .arrow { align-self:center; font-size:1.6rem; color:#888; }
-  .row-label { font-weight:600; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; color:#666; margin:2rem 0 .5rem; }
-  .fetch { background:#eef2ff; border:2px dashed #6366f1; }
-  .decision { background:#fff7ed; border:2px solid var(--warn); }
-  .decision .num { background:var(--warn); }
-  .bonus { background:#f0fdf4; border:2px solid var(--accent); }
-  .bonus .num { background:var(--accent); }
-  .legend { display:flex; gap:1.5rem; margin-top:2.5rem; font-size:.8rem; flex-wrap:wrap; }
-  .legend span { display:inline-flex; align-items:center; gap:.4rem; }
+  .stage {
+    background:var(--paper-2); color:var(--ink); border:2px solid var(--line); border-radius:10px;
+    padding:1rem; width:230px; position:relative; box-shadow:0 10px 24px -16px rgba(0,0,0,.55);
+  }
+  .stage .num {
+    position:absolute; top:-14px; left:12px; font-family:ui-monospace,Consolas,monospace; font-weight:700;
+    background:var(--amber); color:#141310; font-size:.72rem; padding:.15rem .55rem; border-radius:999px;
+  }
+  .stage h3 { margin:.5rem 0 .4rem; font-size:1rem; color:#141310; }
+  .stage p { font-size:.82rem; color:#3a362c; margin:.3rem 0; }
+  .stage .tools { font-family:ui-monospace,Consolas,monospace; font-size:.68rem; color:#6b6350; margin-top:.5rem; }
+  .arrow { align-self:center; font-size:1.6rem; color:var(--amber-soft); }
+  .row-label {
+    font-family:ui-monospace,Consolas,monospace; font-weight:600; font-size:.72rem; text-transform:uppercase;
+    letter-spacing:.1em; color:var(--muted); margin:2.4rem 0 .6rem;
+  }
+  .fetch { background:var(--paper); border:2px dashed var(--amber-soft); }
+  .fetch .num { background:transparent; border:1.5px solid var(--amber-soft); color:var(--amber-soft); }
+  .decision { border:2px solid var(--red); }
+  .decision .num { background:var(--red); color:#f8ece7; }
+  .bonus { border:2px solid var(--green); }
+  .bonus .num { background:var(--green); color:#eaf3e8; }
+  .legend { display:flex; gap:1.5rem; margin-top:2.8rem; font-size:.8rem; flex-wrap:wrap; color:#b9b39f; }
+  .legend span { display:inline-flex; align-items:center; gap:.5rem; }
   .swatch { width:14px; height:14px; border-radius:3px; display:inline-block; }
-  .footer-note { max-width:70ch; margin-top:2.5rem; font-size:.85rem; color:#444; background:#fff; border:1px solid #eee; border-radius:8px; padding:1rem; }
-  code { background:#f1f1f1; padding:.1rem .3rem; border-radius:4px; font-size:.85em; }
+  .footer-note {
+    max-width:70ch; margin-top:2.5rem; font-size:.87rem; color:#cfc8b4;
+    background:var(--paper-2); border:2px solid var(--line); border-radius:10px; padding:1.1rem 1.3rem;
+    box-shadow:0 10px 24px -16px rgba(0,0,0,.55);
+  }
+  .footer-note, .footer-note b { color:var(--ink); }
+  code { background:#e2d9bc; color:#141310; padding:.1rem .35rem; border-radius:4px; font-size:.85em; font-family:ui-monospace,Consolas,monospace; }
 </style>
 </head>
 <body>
+  <div class="eyebrow">The Closer — Inbound BDR Hackathon</div>
   <h1>Thought Process — Inbound BDR Agent Pipeline</h1>
-  <p class="sub">How the problem was broken down: delegated across 7 scoped, independently-callable stages (6 required by the brief + 1 bonus), not one prompt doing everything. Solid boxes are pure logic (deterministic, always inspectable). Dashed boxes are live network fetches. Orange is a real branch/decision point — what the system does when data is missing or ambiguous, not just the happy path.</p>
+  <p class="sub">How the problem was broken down: delegated across 7 scoped, independently-callable stages (6 required by the brief + 1 bonus), not one prompt doing everything. Solid cream boxes are pure logic (deterministic, always inspectable). Dashed boxes are live network fetches. Red is a real branch/decision point — what the system does when data is missing or ambiguous, not just the happy path. Green is the bonus stage.</p>
 
   <div class="row-label">Input</div>
   <div class="flow">
@@ -71,10 +102,10 @@
   </div>
 
   <div class="legend">
-    <span><span class="swatch" style="background:#fff;border:2px solid #2b2b2b"></span> deterministic logic (always runs, fully inspectable)</span>
-    <span><span class="swatch" style="background:#eef2ff;border:2px solid #6366f1"></span> live network fetch (degrades gracefully, never fabricates on failure)</span>
-    <span><span class="swatch" style="background:#fff7ed;border:2px solid #92400e"></span> real decision/branch point</span>
-    <span><span class="swatch" style="background:#f0fdf4;border:2px solid #166534"></span> bonus stage, beyond the brief's 6</span>
+    <span><span class="swatch" style="background:#efe8d6;border:2px solid #161512"></span> deterministic logic (always runs, fully inspectable)</span>
+    <span><span class="swatch" style="background:#f4efe2;border:2px dashed #8a7a3f"></span> live network fetch (degrades gracefully, never fabricates on failure)</span>
+    <span><span class="swatch" style="background:#efe8d6;border:2px solid #b3543f"></span> real decision/branch point</span>
+    <span><span class="swatch" style="background:#efe8d6;border:2px solid #5f8a5b"></span> bonus stage, beyond the brief's 6</span>
   </div>
 
   <div class="footer-note">
