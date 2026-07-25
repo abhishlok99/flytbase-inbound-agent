@@ -1,63 +1,105 @@
-# Submission.md — FlytBase Inbound BDR Agent
+# submission
 
-> Note: if the eval platform's submission form provides its own prompt to regenerate this file against the final codebase, run that and let it supersede this version. This is the accurate, as-built version as of final submission.
+## What I built
 
-## What was built
+An inbound-lead processing agent that takes one raw inbound email (Rodrigo Castillo, Head of Operations at Sociedad Quimica y Minera de Chile (SQM), referred by Anglo American, asking about autonomous inspection for 3 Atacama lithium sites) as its only input and, on every live run, automatically produces: a qualification assessment, a real-data account research brief, an adaptive multi-email response sequence, a case-study match pulled live from flytbase.com, a partner/go-to-market recommendation, and an AE handoff summary — plus one additional stage beyond the required set: an impact simulation that projects outcomes using only this same account's own already-measured results.
 
-A 7-stage inbound-lead processing pipeline (6 required by the brief + 1 bonus) that takes the fixed test email (Rodrigo Castillo, SQM, Atacama lithium sites, referred by Anglo American) and, live on every page load: qualifies it via MEDDPICC with an itemized priority score, builds a real-data account research brief (SEC EDGAR, Google News, flytbase.com), drafts a 3-email adaptive response sequence, matches it against flytbase.com's actual live case studies, recommends a partner/GTM motion, produces an AE handoff summary, and — the bonus stage — projects operational impact using only numbers FlytBase already measured at this same customer's other site.
+Each stage is a separate, independently callable module with typed input/output, wired together by a thin orchestrator that contains no business logic of its own. A client-facing page renders what the referenced link in the drafted outreach email would actually show the buyer — a live rendering of the same underlying data, not a separate mockup.
 
-Two things go beyond the brief's minimum:
+## Architecture / Flow
 
-1. **A live "agent reasoning" console** on the main page — real strings pulled from each stage's actual output (not filler text), revealed in sequence as the corresponding stage section animates in below it. This makes the delegation across stages visible as it happens, not just describable afterward.
-2. **A client-facing landing page** (`/client-preview`), linked directly from the drafted Email 1 — what the lead themselves would see if this were actually sent. It embeds a cinematic 3D simulation (a drone taking off from a dock, flying to each of the 3 sites, hovering to scan with a visible beam and rising data particles, then returning) with a glass HUD showing the real grounded numbers, plus a "nearby, live today" section built from a generic geo-scan of FlytBase's actual case-study locations against the lead's own stated country — for this lead, it correctly surfaces their own existing SQM site in Chile.
+```mermaid
+flowchart TD
+    IN["Raw inbound email: name, title, company, subject, body"]
+    IN --> S1["Stage 1: Qualification (MEDDPICC scoring)"]
 
-## Why this architecture
+    subgraph FETCH["Parallel live research fetches"]
+        F1["flytbase.com case-study crawl"]
+        F2["SEC EDGAR full-text search"]
+        F3["Google News RSS search"]
+    end
+    IN --> FETCH
 
-Delegated across independently callable, typed stages (`stages/stage1_...py` through `stage7_...py`, plus `geo.py` and `stages/visual_simulation.py`) orchestrated by a thin `orchestrator.py` with zero business logic of its own — the delegation is visible by reading the file, not just claimed. See `mindmap.html` for the full flow and the two real decision points (existing-account detection, partner continuity).
+    F1 --> S4["Stage 4: Case Study Matching"]
+    S4 --> D1{"Top match is the lead's own company?"}
+    D1 -->|Yes| EXP["Flag: existing-account / expansion signal"]
+    D1 -->|No| COLD["Treat as new-logo lead"]
 
-## Framework choice: MEDDPICC
+    F2 --> D2{"Fetch returned usable data?"}
+    F3 --> D2
+    D2 -->|No| UNV["Mark section UNVERIFIED AT RUN TIME"]
+    D2 -->|Yes| S2
+    UNV --> S2
+    EXP --> S2
+    COLD --> S2
+    S2["Stage 2: Deep Account Research"]
 
-Chosen over BANT/SPICED because this is a multi-stakeholder enterprise deal with a referral-shaped Champion signal, a dated Decision Process step (Q3 budget conversation), and open Decision Criteria/Competition questions — MEDDPICC's seven fields fit this deal's actual shape; BANT's four fields would flatten it. Full reasoning is generated live in Stage 1's output, not hard-coded here.
+    S1 --> S3
+    S2 --> S3["Stage 3: Response Generation"]
+    S3 --> D3{"LLM API key configured?"}
+    D3 -->|Yes| LLM["LLM-drafted email copy"]
+    D3 -->|No| TPL["Structured-template fallback"]
 
-## The single most important finding
+    S4 --> D4{"Matched case study is the lead's own existing site?"}
+    D4 -->|Yes| S5A["Stage 5: recommend partner continuity"]
+    D4 -->|No| S5B["Stage 5: recommend direct AE or regional LATAM partner"]
 
-Stage 4 deliberately searches for the lead's own company name, not just the explicitly-named referral (Anglo American) — matching against both the scraped case-study title and its URL slug, since page markup isn't always consistent. Doing so surfaces a real, verified fact: SQM already has a live FlytBase case study (the "Hermosa" mine, via partner Adentu — doubled inspection frequency, <1yr ROI, USD 70-80K single-zone investment). This reframes the lead from a cold new-logo to a likely internal expansion signal, which changes the qualification framing, the response strategy, the partner recommendation (continuity with Adentu over a generic regional partner), and the client landing page's "visit us nearby" section (their own site, not a stranger's).
+    S1 --> S6
+    S2 --> S6
+    LLM --> S6
+    TPL --> S6
+    S5A --> S6
+    S5B --> S6
+    S6["Stage 6: AE Handoff Summary"]
 
-## Research quality / anti-fabrication
+    S4 --> D5{"Confident case-study match found?"}
+    D5 -->|Yes| S7["Stage 7 (bonus): Impact Simulation"]
+    D5 -->|No| SKIP["Simulation withheld, flagged as ungrounded"]
 
-Every fact in Stage 2's output is traced to a live fetch (SEC EDGAR full-text search, Google News RSS, flytbase.com's own case-study pages — all free and keyless, deliberately, so research quality never depends on paid tool access). Anything not found at run time is explicitly marked `UNVERIFIED AT RUN TIME` rather than filled with a plausible-sounding guess. Stage 7's simulation refuses to render at all if there's no real case study to ground it in.
+    S7 --> D6{"3D visualization CDN loads?"}
+    D6 -->|Yes| SIM3D["Cinematic 3D drone flight"]
+    D6 -->|No| SIMSVG["Pure-SVG fallback"]
 
-## Path to production (what's simulated here vs. what a real deployment needs)
-
-This runs today as a page you paste a lead into and load. A real BDR wouldn't use it that way — here's the honest gap between this build and production, and what's already designed to close it:
-
-- **Trigger**: a real webhook from flytbase.com/contact firing this pipeline automatically, instead of a manual paste into the try-a-different-lead form.
-- **Send**: Stage 3's drafted emails go out through a real send API (Gmail/Outlook API) instead of just being displayed on the page.
-- **Track**: the app already includes a small working proof-of-concept of this — `/client-preview` records each open in-memory and the main page shows a live "opened Nx, last at HH:MM" pill next to the email's CTA link. It's intentionally minimal (single-process, resets on restart, no persistence) rather than a fabricated dashboard of fake numbers. A real deployment would swap this for standard link/open tracking on a real send.
-- **Follow-up**: Stage 3's progression logic already anticipates this — email 2 is explicitly written to fire "only if no reply," email 3 "only if still no reply." A scheduler checking the same open/reply signal the tracking POC demonstrates would trigger those automatically, so the follow-up logic doesn't need to be rebuilt, just connected to a real signal.
-- **Where this would live**: most naturally as a browser extension/CRM plugin a BDR opens against an inbound thread, rather than a standalone page — the pipeline and its output are already structured as reusable, typed functions (see `orchestrator.py`), so wrapping them behind a different front end doesn't require touching the logic itself.
-
-## Known limitations (candor over polish)
-
-- flytbase.com's per-case-study numeric result badges (e.g. "Reduced Travel Time") are client-side rendered and not reliably extractable via a static fetch — the system does not claim a specific percentage it cannot verify from source.
-- The Stage 3 email sequence runs in structured-template mode unless an LLM API key is configured (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `GROQ_API_KEY`) — template mode is real logic assembled from Stage 1/2 output, not pre-written copy.
-- The 3D simulation loads Three.js from a CDN; if that fails on a flaky connection, a pure-SVG fallback (zero external dependency) renders instead automatically — a live demo should never show a blank panel.
-- The "nearby deployments" geo-scan is generic (a country/region gazetteer matched against whatever case studies were actually fetched, same code path regardless of which lead is loaded) — for this specific lead it currently surfaces one real result (the lead's own Chile site); it will surface more or fewer depending on what FlytBase has actually published, which is the honest behavior.
-- Live fetches (EDGAR/News/flytbase.com) require outbound network access from wherever this is deployed; a restricted network environment degrades gracefully (flagged, not fabricated) rather than failing the whole run.
-- EDGAR full-text search results are ranked by relevance, not filing date, so the "budget signals" section can surface older filings ahead of more recent ones for some companies — the filings shown are always real and unaltered, just not guaranteed to be the most recent on file. An AE should treat this section as a starting pointer into EDGAR, not a complete or current picture.
-
-## How to run
-
+    SIM3D --> CP["Client-preview page: simulation + nearby deployments + live open-tracking"]
+    SIMSVG --> CP
 ```
-pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8000
-```
-Open `/` for the rendered run, `/client-preview` for the client-facing page, `/run.json` for raw output, `/health` for a liveness check.
 
-## Deliverables checklist
+Two decision points sit at the center of the flow, not at the edges. First, Stage 4's match against the lead's own company name (not just the company explicitly named as a referral in the email) determines whether the lead is treated as a cold new-logo or an internal expansion — this single branch changes the tone of Stage 2's positioning recommendation, Stage 3's email framing, and Stage 5's partner choice all at once. Second, whether that same matched case study belongs to the lead's own existing deployment determines whether Stage 5 recommends continuing with that site's existing implementation partner or introducing a new regional one. Every other branch in the diagram is a graceful-degradation path: a missing LLM key, an unreachable fetch, or a failed CDN load all fall back to an explicit, honest alternative rather than failing silently or inventing content.
 
-- [x] Submission.md (this file)
-- [x] mindmap.html (self-contained, no external dependencies)
-- [x] GitHub repo — https://github.com/abhishlok99/flytbase-inbound-agent
-- [x] Live deployed link — https://flytbase-inbound-agent.onrender.com
-- [ ] 5-minute walkthrough, recorded on the platform
+## Why this solves the brief
+
+The system takes the raw email as its only input and produces every required output itself — nothing in the six stages is hand-written and pasted in. The qualification framework (MEDDPICC) is chosen and justified against the shape of this specific deal: multiple stakeholders, a referral-shaped champion signal, and a dated internal process step, which a simpler framework would flatten. The research stage only ever states what it can actually source live; anything it cannot find is labeled as an open item rather than filled in with a plausible guess. The case-study and partner logic search broadly against terms derived from the email — the lead's own company name as well as the explicitly named referral — rather than matching against one pre-known answer, which is what allows the system to catch that this lead is an existing customer expanding into a new site, not a cold prospect. The response sequence and handoff summary both build directly on what the earlier stages actually found, with the handoff introducing no claim that isn't already established upstream.
+
+## Evidence from the codebase
+
+- `stages/stage1_qualification.py` — `qualify()` extracts every "known" MEDDPICC field from the raw email text via keyword/pattern matching (no fact about SQM or Rodrigo is hard-coded), and builds the priority score from an itemized list of weighted signals, each with its own stated reasoning.
+- `fetchers/edgar.py`, `fetchers/news.py`, `fetchers/flytbase_site.py` — live, keyless fetch functions against SEC EDGAR, Google News RSS, and flytbase.com's own case-study pages.
+- `stages/stage2_research.py` — `build_research_brief()` explicitly writes `UNVERIFIED AT RUN TIME` into any section where a fetch returned nothing usable, instead of filling the gap with an invented figure.
+- `stages/stage4_case_study.py` — scores every fetched case study against terms derived from the email (company name, any referenced company, industry and use-case keywords); confirmed by inspection that no company name is hard-coded anywhere in the matching logic itself, only referenced in surrounding comments explaining the approach.
+- `stages/stage5_partner.py` — the partner/motion recommendation logic; also confirmed free of hard-coded company names.
+- `stages/stage6_handoff.py` — `build_handoff()` takes the typed outputs of Stages 1–5 as arguments and only recombines them; it introduces no new claim.
+- `stages/stage7_simulation.py` and `stages/visual_simulation.py` — the bonus stage; projections are derived only from the matched case study's own real, sourced metrics, and the visualization degrades to a dependency-free SVG rendering if the 3D library's CDN doesn't load.
+- `orchestrator.py` — a thin wiring layer with no embedded business logic, calling each stage module in sequence and passing typed results forward.
+- `app.py` — includes a `/client-preview` route that renders the buyer-facing version of the Stage 5/7 output, plus a small in-memory counter that tracks and displays opens of that link next to the Stage 3 email's call-to-action.
+
+## Demo / results
+
+From a live run against the fixed input email:
+
+- **Stage 1** produced a MEDDPICC assessment with a priority score of 100/100, built from five weighted, individually-justified signals (cost/safety pain framing, a dated Q3 decision-process signal, explicit stated pain, a warm referral acting as a champion proxy, and multi-site continuous-operation scale) — alongside four explicitly listed open fields (Decision Criteria, Competition, Paper Process, and confirmation of Economic Buyer authority).
+- **Stage 2** correctly surfaced, via a live crawl of flytbase.com, that SQM already has an existing case study with FlytBase (a 678 km² site referred to as "Hermosa"), and flagged this lead as a likely internal expansion signal rather than a cold prospect. It also pulled live, dated recent-news items (a Codelco-SQM lithium venture, earnings coverage) and live stakeholder/investor-signal items (a dividend-policy announcement), and returned real (if not perfectly current) SEC filing references for the budget-signals section.
+- **Stage 3** generated a three-email sequence with an explicit stated progression: the first email asks about the two biggest qualification gaps while the referral is warm, the second shifts to offering proof if there's no reply, and the third respectfully offers to check back closer to the buyer's own stated Q3 timeline.
+- **Stage 4** returned two ranked matches: the SQM case study as the top match, with the stated reason that the lead's own company name appears in it, and the Anglo American case study as a secondary match, reasoned from the explicit referral in the email.
+- **Stage 5** recommended a partner-led motion continuing with the same implementation partner already running the lead's existing site, rather than defaulting to a generic regional LATAM partner.
+- **Stage 6** synthesized all of the above into a single handoff: buyer context, qualification status with the underlying knowns/unknowns, the top research highlights, the recommended case study and why, and a next step tied back to the Q3 timeline.
+- **Stage 7 (bonus)** projected a 2× inspection-frequency uplift, sub-one-year time-to-ROI, and a $70–80K single-zone investment range, scaled from the matched case study's own real, sourced numbers — with an explicit caveat that a 3-site, 24/7 deployment is a materially larger duty cycle than the source site's.
+- The **client-preview page** renders live with the same grounded numbers and an open-tracking indicator that correctly transitions from "not opened yet" to a recorded open count after a real page load.
+
+## Notes and limitations
+
+- Without a configured LLM API key, Stage 3 runs in a structured-template mode — still logic-driven from Stage 1 and Stage 2's actual output, not static pre-written copy, but less fluent than an LLM-drafted version would be.
+- SEC EDGAR's full-text search returns results ranked by relevance rather than filing date, so the budget-signals section can surface older filings ahead of more recent ones for a given company — the data shown is always real, just not guaranteed to be the most current on file.
+- The "nearby deployments" matching is a generic country/region lookup over whatever case studies were actually fetched at run time, so its results depend on what FlytBase has actually published, not a fixed list.
+- The 3D visualization depends on an external CDN; a pure-SVG fallback with no external dependency renders automatically if that load fails, so the page never shows a blank panel.
+- All live fetches (EDGAR, News, flytbase.com) require outbound network access; in a restricted environment they degrade by explicitly flagging the affected section rather than failing the entire run or inventing a replacement value.
+- The open-tracking counter on the client-preview link is an in-memory, single-process proof of concept — it resets on restart and isn't persisted — intended to demonstrate the mechanism, not serve as production analytics.
