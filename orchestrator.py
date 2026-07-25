@@ -32,6 +32,8 @@ def run_pipeline(email: dict) -> dict:
     case_studies = step("fetch_case_studies", flytbase_site.fetch_case_studies) or []
     edgar_hits = step("fetch_edgar", edgar.full_text_search, email.get("company", "")) or []
     news_items = step("fetch_news", news.search_news, f"{email.get('company','')} lithium Atacama") or []
+    stakeholder_items = step("fetch_stakeholder_signals", news.search_news,
+                              f'{email.get("company","")} investor letter OR shareholder letter OR annual report') or []
 
     # --- Stage 4 (needs live case studies) ---
     case_study_match = step("4_case_study_match", stage4_case_study.match_case_studies, email, case_studies) or {
@@ -42,7 +44,7 @@ def run_pipeline(email: dict) -> dict:
 
     # --- Stage 2 ---
     research = step("2_research", stage2_research.build_research_brief,
-                     email, edgar_hits, news_items, top_match) or {}
+                     email, edgar_hits, news_items, top_match, stakeholder_items) or {}
 
     # --- Stage 3 ---
     response_seq = step("3_response", stage3_response.generate_sequence, email, qualification, research) or {}

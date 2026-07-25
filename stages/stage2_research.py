@@ -11,8 +11,10 @@ so this stage is built to fail loud (flag a gap) rather than fail silent
 
 
 def build_research_brief(email: dict, edgar_hits: list, news_items: list,
-                          matched_case_study: dict | None, org_notes: str = "") -> dict:
+                          matched_case_study: dict | None, stakeholder_items: list | None = None,
+                          org_notes: str = "") -> dict:
     company = email.get("company", "")
+    stakeholder_items = stakeholder_items or []
 
     budget_signals = []
     if edgar_hits and not any("error" in h for h in edgar_hits):
@@ -31,6 +33,17 @@ def build_research_brief(email: dict, edgar_hits: list, news_items: list,
             recent_news.append(f"{n.get('title','')} ({n.get('source','')}, {n.get('pubDate','')})")
     if not recent_news:
         recent_news.append("UNVERIFIED AT RUN TIME: news fetch returned no results in this run -- flag as open item, do not invent headlines.")
+
+    stakeholder_signals = []
+    if stakeholder_items and not any("error" in s for s in stakeholder_items):
+        for s in stakeholder_items[:4]:
+            stakeholder_signals.append(f"{s.get('title','')} ({s.get('source','')}, {s.get('pubDate','')})")
+    if not stakeholder_signals:
+        stakeholder_signals.append(
+            "UNVERIFIED AT RUN TIME: no investor/shareholder letter or annual-report coverage surfaced via "
+            "keyless search this run -- flag as an open research item for the AE (e.g. pull directly from "
+            "the company's investor-relations site) rather than fabricate a quote or priority."
+        )
 
     existing_relationship = None
     if matched_case_study and matched_case_study.get("match_score", 0) >= 50:
@@ -55,6 +68,7 @@ def build_research_brief(email: dict, edgar_hits: list, news_items: list,
         "org_structure_note": org_notes or "Not independently verified in this run -- recommend AE confirm SQM's Northern Operations Division reporting line before the first call.",
         "budget_signals": budget_signals,
         "recent_news": recent_news,
+        "stakeholder_signals": stakeholder_signals,
         "existing_relationship_signal": existing_relationship,
         "positioning_recommendation": positioning_recommendation,
     }

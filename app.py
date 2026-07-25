@@ -319,6 +319,13 @@ def render_html(result: dict) -> str:
     <div class="card">
       <div class="flag">{esc(r.get('existing_relationship_signal') or 'No existing-relationship signal found this run.')}</div>
       <p><b>Positioning recommendation:</b> {esc(r.get('positioning_recommendation'))}</p>
+      <p><b>Org structure / reporting line:</b> {esc(r.get('org_structure_note'))}</p>
+      <p><b>Budget signals (public filings):</b></p>
+      <ul>{"".join(f"<li>{esc(x)}</li>" for x in r.get('budget_signals', []))}</ul>
+      <p><b>Recent news:</b></p>
+      <ul>{"".join(f"<li>{esc(x)}</li>" for x in r.get('recent_news', []))}</ul>
+      <p><b>Stakeholder / investor signals:</b></p>
+      <ul>{"".join(f"<li>{esc(x)}</li>" for x in r.get('stakeholder_signals', []))}</ul>
     </div>
   </section>
 
