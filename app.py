@@ -13,12 +13,26 @@ their own "AI in Action" show format: speaking the company's own visual
 language is a small, cheap signal that the homework went beyond the brief.
 """
 import json
+import re
+from urllib.parse import quote
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 
 import geo
 from orchestrator import run_pipeline
 from stages.visual_simulation import render_simulation
+
+
+def _maps_search_link(candidate: dict) -> str:
+    """A Google Maps SEARCH link (not a pinned address) built from real,
+    already-known data -- the case study's own location + a cleaned
+    version of its title. Exact site coordinates aren't published
+    anywhere we fetch from, so this searches by name/region rather than
+    fabricating a precise street address."""
+    label = re.sub(r"\d+[%×x]|\bRead\b|\bMining\b", " ", candidate.get("title", ""))
+    label = re.sub(r"\s+", " ", label).strip()[:70]
+    query = f"{label} {candidate.get('location','')}".strip()
+    return "https://www.google.com/maps/search/?api=1&query=" + quote(query)
 
 app = FastAPI(title="FlytBase Inbound BDR Agent")
 
@@ -395,6 +409,9 @@ CLIENT_STYLE = """
   .visit-card .vloc{font-family:'JetBrains Mono'; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; color:var(--amber); margin-bottom:.4rem}
   .visit-card a{color:#faf7ee; text-decoration:none; font-weight:600; font-size:.95rem}
   .visit-card a:hover{color:var(--amber)}
+  .visit-card .vaddr{font-size:.76rem; color:#8a8578; margin:.7rem 0 0; line-height:1.45}
+  .visit-card .vaddr a{color:var(--amber); font-weight:500; font-size:.8rem}
+  .visit-card .vask{font-size:.85rem; color:#f4d896; margin:.6rem 0 0; font-weight:600}
   .visit-cta{
     margin-top:1.4rem; font-family:'JetBrains Mono'; font-size:.85rem; color:#e9e4d6; background:#161512;
     border:1px dashed var(--amber-soft); border-radius:8px; padding:.9rem 1.1rem;
@@ -436,7 +453,12 @@ def render_client_page(result: dict) -> str:
     visit_html = "".join(
         f"""<div class="visit-card"><div class="vloc">{esc(c.get('location',''))}</div>
         <a href="{esc(c['url'])}" target="_blank">{esc(c['title'])[:90]} &#8599;</a>
-        <p style="font-size:.82rem;color:#9a9483;margin:.5rem 0 0">{esc(c['why'])}</p></div>"""
+        <p style="font-size:.82rem;color:#9a9483;margin:.5rem 0 0">{esc(c['why'])}</p>
+        <p class="vaddr">&#128205; Approx. location (map search, not a pinned address -- exact site
+        coordinates aren't published anywhere we fetch from) &mdash;
+        <a href="{esc(_maps_search_link(c))}" target="_blank">Open in Google Maps &#8599;</a></p>
+        <p class="vask">Would you like to visit this site in person before your Q3 conversation?
+        If yes &mdash; what week works for you?</p></div>"""
         for c in candidates
     )
 
@@ -460,7 +482,7 @@ def render_client_page(result: dict) -> str:
   <div class="csection">
     <h2>02 &middot; Nearby, live today</h2>
     <div class="cgrid">{visit_html or "<p style='color:#9a9483'>No independently-nearby deployments found this run beyond the match above.</p>"}</div>
-    <div class="visit-cta">Would it be useful to visit one of these in person before your Q3 conversation? Happy to arrange a hands-on look at a live site near you.</div>
+    <div class="visit-cta">Happy to arrange a hands-on visit to any of the sites above &mdash; just reply with which one and a week that works.</div>
   </div>
 
   <div class="csection">
