@@ -44,6 +44,7 @@ This runs today as a page you paste a lead into and load. A real BDR wouldn't us
 - The 3D simulation loads Three.js from a CDN; if that fails on a flaky connection, a pure-SVG fallback (zero external dependency) renders instead automatically — a live demo should never show a blank panel.
 - The "nearby deployments" geo-scan is generic (a country/region gazetteer matched against whatever case studies were actually fetched, same code path regardless of which lead is loaded) — for this specific lead it currently surfaces one real result (the lead's own Chile site); it will surface more or fewer depending on what FlytBase has actually published, which is the honest behavior.
 - Live fetches (EDGAR/News/flytbase.com) require outbound network access from wherever this is deployed; a restricted network environment degrades gracefully (flagged, not fabricated) rather than failing the whole run.
+- EDGAR full-text search results are ranked by relevance, not filing date, so the "budget signals" section can surface older filings ahead of more recent ones for some companies — the filings shown are always real and unaltered, just not guaranteed to be the most recent on file. An AE should treat this section as a starting pointer into EDGAR, not a complete or current picture.
 
 ## How to run
 
