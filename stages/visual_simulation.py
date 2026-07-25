@@ -87,88 +87,223 @@ _JS_TEMPLATE = r"""
     if(!container || typeof THREE === 'undefined'){ showFallback(); return; }
     var W = container.clientWidth, H = __HEIGHT__;
     var scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0c0c0b, 0.012);
-    var camera = new THREE.PerspectiveCamera(42, W/H, 0.1, 1000);
+    scene.fog = new THREE.FogExp2(0x1a140c, 0.0095);
+    var camera = new THREE.PerspectiveCamera(45, W/H, 0.1, 2000);
     var renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
     renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
 
-    // terrain grid -- stylized desert, self-lit so it never renders black
-    var grid = new THREE.GridHelper(140, 28, 0xc99a3c, 0x3a3426);
-    grid.material.transparent = true; grid.material.opacity = 0.35;
-    scene.add(grid);
-    var groundGeo = new THREE.PlaneGeometry(140, 140);
-    var groundMat = new THREE.MeshBasicMaterial({color:0x141310, transparent:true, opacity:0.85});
-    var ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI/2; ground.position.y = -0.05;
+    // -- lighting: low warm "desert sun" casting real shadows
+    var sun = new THREE.DirectionalLight(0xffcf8a, 1.15);
+    sun.position.set(-60, 70, 40);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024,1024);
+    sun.shadow.camera.left = -110; sun.shadow.camera.right = 110;
+    sun.shadow.camera.top = 110; sun.shadow.camera.bottom = -110;
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 260;
+    scene.add(sun);
+    scene.add(new THREE.AmbientLight(0x6b5a3f, 0.65));
+    scene.add(new THREE.HemisphereLight(0xffe3b0, 0x2a1d10, 0.35));
+
+    // -- procedurally displaced dune terrain, zero external textures
+    var segs = 64, size = 220;
+    var groundGeo = new THREE.PlaneGeometry(size, size, segs, segs);
+    groundGeo.rotateX(-Math.PI/2);
+    var gp = groundGeo.attributes.position;
+    for(var i=0;i<gp.count;i++){
+      var x = gp.getX(i), z = gp.getZ(i);
+      var h = Math.sin(x*0.045)*Math.cos(z*0.05)*3.2 + Math.sin(x*0.12+z*0.09)*1.1;
+      gp.setY(i, h);
+    }
+    groundGeo.computeVertexNormals();
+    var ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({color:0xb98a4e, roughness:1}));
+    ground.receiveShadow = true;
     scene.add(ground);
+    var grid = new THREE.GridHelper(size, 22, 0xc99a3c, 0x5a4526);
+    grid.material.transparent = true; grid.material.opacity = 0.10; grid.position.y = 0.08;
+    scene.add(grid);
 
+    // -- dock: drone-in-a-box station, the flight's start/end point
+    var DOCK = new THREE.Vector3(0,0,0);
+    var dockGroup = new THREE.Group();
+    var pad = new THREE.Mesh(new THREE.CylinderGeometry(7,7.6,0.6,24), new THREE.MeshStandardMaterial({color:0x2a2822, roughness:0.6}));
+    pad.receiveShadow = true; dockGroup.add(pad);
+    var box = new THREE.Mesh(new THREE.BoxGeometry(3.4,2.4,3.4), new THREE.MeshStandardMaterial({color:0xe9c873, roughness:0.4, metalness:0.3}));
+    box.position.y = 1.2; box.castShadow = true; dockGroup.add(box);
+    var beacon = new THREE.Mesh(new THREE.SphereGeometry(0.25,8,8), new THREE.MeshBasicMaterial({color:0xff6a3c}));
+    beacon.position.y = 2.6; dockGroup.add(beacon);
+    dockGroup.position.copy(DOCK);
+    scene.add(dockGroup);
+
+    // -- 3 survey sites
     var sitePositions = [
-      new THREE.Vector3(-38, 0, -18),
-      new THREE.Vector3(36, 0, -6),
-      new THREE.Vector3(-4, 0, 34),
+      new THREE.Vector3(-46, 0, -22),
+      new THREE.Vector3(44, 0, -8),
+      new THREE.Vector3(-6, 0, 42),
     ];
-    var siteGroup = new THREE.Group();
-    var pulses = [];
-    sitePositions.forEach(function(p, i){
-      var pin = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,8,8), new THREE.MeshBasicMaterial({color:0x8a7a3f}));
-      pin.position.copy(p); pin.position.y = 4;
-      siteGroup.add(pin);
-      var glow = new THREE.Mesh(new THREE.SphereGeometry(2.4,16,16), new THREE.MeshBasicMaterial({color:0xe9c873}));
-      glow.position.copy(p); glow.position.y = 8.5;
-      siteGroup.add(glow);
-      var ring = new THREE.Mesh(new THREE.RingGeometry(3,3.6,32), new THREE.MeshBasicMaterial({color:0xb3543f, transparent:true, opacity:0.8, side:THREE.DoubleSide}));
-      ring.rotation.x = -Math.PI/2; ring.position.copy(p); ring.position.y = 0.1;
-      siteGroup.add(ring);
-      pulses.push({mesh:ring, phase:i*2.1});
+    var pulses = [], scanBeams = [];
+    sitePositions.forEach(function(p){
+      var pin = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,7,8), new THREE.MeshStandardMaterial({color:0x8a7a3f}));
+      pin.position.copy(p); pin.position.y = 3.5; pin.castShadow = true;
+      scene.add(pin);
+      var marker = new THREE.Mesh(new THREE.OctahedronGeometry(1.6,0), new THREE.MeshStandardMaterial({color:0xe9c873, emissive:0x3a2c0f}));
+      marker.position.copy(p); marker.position.y = 7.5;
+      scene.add(marker);
+      var ring = new THREE.Mesh(new THREE.RingGeometry(3,3.7,32), new THREE.MeshBasicMaterial({color:0xb3543f, transparent:true, opacity:0.7, side:THREE.DoubleSide}));
+      ring.rotation.x = -Math.PI/2; ring.position.copy(p); ring.position.y = 0.15;
+      scene.add(ring);
+      pulses.push({mesh:ring, phase:Math.random()*6});
+
+      var beam = new THREE.Mesh(new THREE.ConeGeometry(3.6, 12, 20, 1, true), new THREE.MeshBasicMaterial({color:0xe9c873, transparent:true, opacity:0, side:THREE.DoubleSide}));
+      beam.position.copy(p); beam.position.y = 6.5;
+      scene.add(beam);
+      scanBeams.push(beam);
     });
-    scene.add(siteGroup);
 
-    // drone patrol path -- smooth closed loop through the 3 sites
-    var curvePts = sitePositions.map(function(p){ return new THREE.Vector3(p.x, 10, p.z); });
-    var curve = new THREE.CatmullRomCurve3(curvePts, true);
-    var drone = new THREE.Mesh(new THREE.IcosahedronGeometry(1.4,0), new THREE.MeshBasicMaterial({color:0xe9c873}));
+    // -- rising "data collection" particles, spawned during a scan
+    var PCOUNT = 40;
+    var particleGeo = new THREE.BufferGeometry();
+    var particlePos = new Float32Array(PCOUNT*3);
+    var particleLife = new Float32Array(PCOUNT);
+    for(var pi=0; pi<PCOUNT; pi++){ particleLife[pi] = -1; particlePos[pi*3+1] = -1000; }
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos,3));
+    var particles = new THREE.Points(particleGeo, new THREE.PointsMaterial({color:0xf4d896, size:1.3, transparent:true, opacity:0.9, sizeAttenuation:true}));
+    scene.add(particles);
+
+    // -- drone: quadcopter built from primitives, spinning rotors
+    var drone = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.BoxGeometry(1.6,0.5,1.6), new THREE.MeshStandardMaterial({color:0x1c1a16, roughness:0.4}));
+    body.castShadow = true; drone.add(body);
+    var rotors = [];
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(function(a){
+      var arm = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,1.9,6), new THREE.MeshStandardMaterial({color:0x2a2822}));
+      arm.rotation.z = Math.PI/2; arm.position.set(a[0], 0, a[1]);
+      drone.add(arm);
+      var rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.75,0.75,0.05,16), new THREE.MeshBasicMaterial({color:0xc9c3ae, transparent:true, opacity:0.55}));
+      rotor.position.set(a[0]*1.75, 0.15, a[1]*1.75);
+      drone.add(rotor); rotors.push(rotor);
+    });
+    drone.add(new THREE.PointLight(0xffcf8a, 1.2, 18));
     scene.add(drone);
-    var droneGlow = new THREE.PointLight ? null : null; // (kept simple/basic-material only, see header note)
-    var glowSprite = new THREE.Mesh(new THREE.SphereGeometry(3.2,12,12), new THREE.MeshBasicMaterial({color:0xc99a3c, transparent:true, opacity:0.25}));
-    scene.add(glowSprite);
 
-    // fading trail
-    var trailLen = 40, trailPts = [];
-    for(var i=0;i<trailLen;i++) trailPts.push(curve.getPointAt(0));
-    var trailGeo = new THREE.BufferGeometry().setFromPoints(trailPts);
-    var trailMat = new THREE.LineBasicMaterial({color:0xc99a3c, transparent:true, opacity:0.5});
-    var trailLine = new THREE.Line(trailGeo, trailMat);
+    var trailLen = 50, trailPts = [];
+    for(var ti=0; ti<trailLen; ti++) trailPts.push(DOCK.clone());
+    var trailLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(trailPts),
+      new THREE.LineBasicMaterial({color:0xe9c873, transparent:true, opacity:0.35}));
     scene.add(trailLine);
 
-    camera.position.set(0, 42, 70);
+    // -- flight choreography: dock -> takeoff -> [transit -> scan] x3 -> transit -> land
+    var AIR_H = 13;
+    function airAbove(v){ return new THREE.Vector3(v.x, AIR_H, v.z); }
+    var DOCK_AIR = airAbove(DOCK);
+    var seq = [{type:'takeoff', dur:2.2}];
+    var prev = DOCK_AIR;
+    sitePositions.forEach(function(s){
+      var air = airAbove(s);
+      seq.push({type:'transit', dur:4.0, from:prev, to:air});
+      seq.push({type:'scan', dur:3.2, at:air, ground:s});
+      prev = air;
+    });
+    seq.push({type:'transit', dur:4.0, from:prev, to:DOCK_AIR});
+    seq.push({type:'land', dur:2.0});
+    var TOTAL = seq.reduce(function(a,p){ return a+p.dur; }, 0);
+    function ease(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+    function currentPhase(t){
+      var acc = 0;
+      for(var i=0;i<seq.length;i++){
+        if(t < acc+seq[i].dur) return {ph:seq[i], local:(t-acc)/seq[i].dur};
+        acc += seq[i].dur;
+      }
+      return {ph:seq[seq.length-1], local:1};
+    }
+
     var clock = new THREE.Clock();
-    var camAngle = 0;
+    camera.position.set(30,20,50);
+    camera.userData.look = new THREE.Vector3(0,5,0);
 
     function animate(){
       requestAnimationFrame(animate);
       var t = clock.getElapsedTime();
-      var loopT = (t * 0.035) % 1;
-      var pos = curve.getPointAt(loopT);
-      drone.position.copy(pos); glowSprite.position.copy(pos);
-      drone.rotation.y += 0.03;
+      var cur = currentPhase(t % TOTAL);
+      var ph = cur.ph, lt = ease(Math.min(Math.max(cur.local,0),1));
+      var dp = drone.position, scanActive = null;
 
-      trailPts.shift();
-      trailPts.push(pos.clone());
-      trailLine.geometry.setFromPoints(trailPts);
+      if(ph.type==='takeoff'){
+        dp.set(DOCK.x, THREE.MathUtils.lerp(0.6, AIR_H, lt), DOCK.z);
+        drone.rotation.z = 0;
+      } else if(ph.type==='land'){
+        dp.set(DOCK.x, THREE.MathUtils.lerp(AIR_H, 0.6, lt), DOCK.z);
+        drone.rotation.z = 0;
+      } else if(ph.type==='transit'){
+        var arc = Math.sin(lt*Math.PI) * 5;
+        dp.set(
+          THREE.MathUtils.lerp(ph.from.x, ph.to.x, lt),
+          THREE.MathUtils.lerp(ph.from.y, ph.to.y, lt) + arc,
+          THREE.MathUtils.lerp(ph.from.z, ph.to.z, lt)
+        );
+        drone.rotation.y = Math.atan2(ph.to.x-ph.from.x, ph.to.z-ph.from.z);
+        drone.rotation.z = THREE.MathUtils.lerp(0, -0.22, Math.sin(lt*Math.PI));
+      } else if(ph.type==='scan'){
+        var ang = lt * Math.PI * 2 * 1.4;
+        dp.set(ph.at.x + Math.cos(ang)*3.2, ph.at.y, ph.at.z + Math.sin(ang)*3.2);
+        drone.rotation.y = ang + Math.PI/2; drone.rotation.z = 0;
+        scanActive = ph.ground;
+      }
+
+      rotors.forEach(function(r){ r.rotation.y += 1.4; });
+
+      scanBeams.forEach(function(beam, i){
+        var isActive = scanActive === sitePositions[i];
+        beam.material.opacity += ((isActive?0.35:0) - beam.material.opacity) * 0.08;
+        if(isActive && Math.random() < 0.35){
+          for(var k=0;k<PCOUNT;k++){
+            if(particleLife[k] < 0){
+              particlePos[k*3] = scanActive.x + (Math.random()-0.5)*4;
+              particlePos[k*3+1] = 0.5;
+              particlePos[k*3+2] = scanActive.z + (Math.random()-0.5)*4;
+              particleLife[k] = 1.4;
+              break;
+            }
+          }
+        }
+      });
+      for(var k=0;k<PCOUNT;k++){
+        if(particleLife[k] > 0){
+          particlePos[k*3+1] += 0.09;
+          particleLife[k] -= 0.018;
+          if(particleLife[k] <= 0){ particleLife[k] = -1; particlePos[k*3+1] = -1000; }
+        }
+      }
+      particleGeo.attributes.position.needsUpdate = true;
 
       pulses.forEach(function(p){
-        var s = 1 + 0.6*Math.abs(Math.sin(t*0.9 + p.phase));
+        var s = 1 + 0.5*Math.abs(Math.sin(t*0.9 + p.phase));
         p.mesh.scale.set(s,s,s);
-        p.mesh.material.opacity = 0.85 - 0.5*Math.abs(Math.sin(t*0.9 + p.phase));
       });
 
-      camAngle += 0.0022;
-      camera.position.x = Math.sin(camAngle) * 78;
-      camera.position.z = Math.cos(camAngle) * 78;
-      camera.position.y = 40;
-      camera.lookAt(0, 4, 0);
+      trailPts.shift(); trailPts.push(dp.clone());
+      trailLine.geometry.setFromPoints(trailPts);
+
+      // -- cinematic camera: reframes per flight phase instead of one static orbit
+      var camTarget, lookTarget;
+      if(ph.type==='scan'){
+        var orbitA = t*0.25;
+        camTarget = new THREE.Vector3(scanActive.x+Math.cos(orbitA)*22, scanActive.y+10, scanActive.z+Math.sin(orbitA)*22);
+        lookTarget = scanActive;
+      } else if(ph.type==='takeoff' || ph.type==='land'){
+        camTarget = new THREE.Vector3(DOCK.x+16, 10, DOCK.z+16);
+        lookTarget = dp;
+      } else {
+        camTarget = new THREE.Vector3(dp.x, dp.y+9, dp.z).addScaledVector(
+          new THREE.Vector3(Math.sin(drone.rotation.y), 0, Math.cos(drone.rotation.y)), -16);
+        lookTarget = dp;
+      }
+      camera.position.lerp(camTarget, 0.035);
+      camera.userData.look.lerp(lookTarget, 0.06);
+      camera.lookAt(camera.userData.look);
 
       renderer.render(scene, camera);
     }
